@@ -77,24 +77,20 @@ void Simple3DGame::Initialize(
 
     m_timer = ref new GameTimer();
 
-    // Create a sphere primitive to represent the player.
-    // The sphere will be used to handle collisions and constrain the player in the world.
-    // It is not rendered so it is not added to the list of render objects.
-    // It is added to the object list so it will be included in intersection calculations.
-    m_player = ref new Sphere(XMFLOAT3(0.0f, -1.3f, 4.0f), 0.2f);
-    m_objects.push_back(m_player);
-    m_player->Active(true);
 
     m_camera = ref new Camera;
     m_camera->SetProjParams(XM_PI / 2, 1.0f, 0.01f, 100.0f);
     m_camera->SetViewParams(
-       XMFLOAT3(0.0f,0.0f,-5.0f),            // Eye point in world coordinates.
+       XMFLOAT3(0.0f,0.0f,5.0f),            // Eye point in world coordinates.
         XMFLOAT3 (0.0f, 0.0f, 0.0f),     // Look at point in world coordinates.
         XMFLOAT3 (0.0f, 1.0f, 0.0f)      // The Up vector for the camera.
         );
 
     m_controller->Pitch(m_camera->Pitch());
     m_controller->Yaw(m_camera->Yaw());
+
+
+
 
     // Instantiate a set of primitives to represent the containing world. These objects
     // maintain the geometry and material properties of the walls, floor and ceiling.
@@ -120,6 +116,17 @@ void Simple3DGame::Initialize(
     // All camera motion and dynamics are confined to this space.
     m_minBound = XMFLOAT3(-5.0f, -3.0f, -9.0f);
     m_maxBound = XMFLOAT3(5.0f, 3.0f, 9.0f);
+
+	// Create a sphere primitive to represent the player.
+	// The sphere will be used to handle collisions and constrain the player in the world.
+	// It is not rendered so it is not added to the list of render objects.
+
+	// It is added to the object list so it will be included in intersection calculations.
+	m_player = ref new Sphere(XMFLOAT3(0.0f, -2.0f, 4.0f), 0.2f);
+	m_player->Active(true);
+	m_objects.push_back(m_player);
+	m_renderObjects.push_back(m_player);
+
 
     // Instantiate the Cylinders for use in the various game levels.
     // Each cylinder has a different initial position, radius and direction vector,
@@ -253,11 +260,11 @@ void Simple3DGame::Initialize(
 
 void Simple3DGame::LoadGame()
 {
-    m_player->Position(XMFLOAT3 (0.0f, -1.3f, 4.0f));
+    m_player->Position(XMFLOAT3 (0.0f, -2.0f, 4.0f));
 
     m_camera->SetViewParams(
-		XMFLOAT3(0.0f, 0.0f, -5.0f),            // Eye point in world coordinates.
-		XMFLOAT3 (0.0f, 0.7f, 0.0f),     // Look at point in world coordinates.
+		XMFLOAT3(5.0f, 2.0f, 9.0f),            // Eye point in world coordinates.
+		XMFLOAT3 (0.0f, 1.0f, 0.0f),     // Look at point in world coordinates.
         XMFLOAT3 (0.0f, 1.0f, 0.0f)      // The Up vector for the camera.
         );
 
@@ -366,8 +373,10 @@ GameState Simple3DGame::RunGame()
     }
     else
     {
+
         // Time has not expired, so run one frame of game play.
         m_player->Velocity(m_controller->Velocity());
+		
         //m_camera->LookDirection(m_controller->LookDirection());
 
         UpdateDynamics();
@@ -461,12 +470,19 @@ void Simple3DGame::UpdateDynamics()
 
             // Compute initial velocity in world space from camera space.
             XMFLOAT4 initialVelocity(0.0f, 0.0f, 15.0f, 0.0f);
-            m_ammo[m_ammoNext]->Velocity(XMVector4Transform(XMLoadFloat4(&initialVelocity), invView));
+            //m_ammo[m_ammoNext]->Velocity(XMVector4Transform(XMLoadFloat4(&initialVelocity), invView));
+			m_ammo[m_ammoNext]->Velocity(XMFLOAT3(0.0f,0.0f,-15.0f));
+
 
             // Set the initial position of the ammo to be fired. The position is offset from the player
             // to avoid an initial collision with the player object.
-            XMFLOAT4 initialPosition(0.0f, -0.15f, m_player->Radius() + GameConstants::AmmoSize, 1.0f);
-            m_ammo[m_ammoNext]->Position(XMVector4Transform(XMLoadFloat4(&initialPosition), invView));
+			XMFLOAT3 shootPosition = m_player->Position();
+			shootPosition.y += -0.15f;
+			shootPosition.z += m_player->Radius() + GameConstants::AmmoSize;
+            //XMFLOAT3 initialPosition(0.0f, -0.15f, m_player->Radius() + GameConstants::AmmoSize);
+            //m_ammo[m_ammoNext]->Position(XMVector4Transform(XMLoadFloat4(&initialPosition), invView));
+			m_ammo[m_ammoNext]->Position(shootPosition);
+
 
             // Initially not laying on ground.
             m_ammo[m_ammoNext]->OnGround(false);
@@ -600,71 +616,71 @@ void Simple3DGame::UpdateDynamics()
         if (m_ammoCount > 0)
         {
             // Check for collisions between ammo.
-#pragma region inter-ammo collision detection
-            if (m_ammoCount > 1)
-            {
-                for (uint32 one = 0; one < m_ammoCount; one++)
-                {
-                    for (uint32 two = (one + 1); two < m_ammoCount; two++)
-                    {
-                        // Check collision between instances One and Two.
-                        // OneToTwo is the vector between the centers of the two ammo that are being checked.
-                        XMVECTOR oneToTwo;
-                        oneToTwo = m_ammo[two]->VectorPosition() - m_ammo[one]->VectorPosition();
-                        float distanceSquared;
-                        distanceSquared = XMVectorGetX(
-                            XMVector3LengthSq(oneToTwo)
-                            );
-                        if (distanceSquared < (GameConstants::AmmoSize * GameConstants::AmmoSize))
-                        {
-                            // The two ammo are intersecting.
-                            oneToTwo = XMVector3Normalize(oneToTwo);
-
-                            // Check if the two instances are already moving away from each other.
-                            // If so, skip collision.  This can happen when a lot of instances are
-                            // bunched up next to each other.
-                            float impact;
-                            impact = XMVectorGetX(
-                                XMVector3Dot(oneToTwo, m_ammo[one]->VectorVelocity()) -
-                                XMVector3Dot(oneToTwo, m_ammo[two]->VectorVelocity())
-                                );
-                            if (impact > 0.0f)
-                            {
-                                // Compute the normal and tangential components of one's velocity.
-                                XMVECTOR velocityOne = (1 - GameConstants::Physics::BounceLost) * m_ammo[one]->VectorVelocity();
-                                XMVECTOR velocityOneNormal = XMVector3Dot(oneToTwo, velocityOne) * oneToTwo;
-                                XMVECTOR velocityOneTangent = velocityOne - velocityOneNormal;
-                                // Compute the normal and tangential components of two's velocity.
-                                XMVECTOR velocityTwo = (1 - GameConstants::Physics::BounceLost) * m_ammo[two]->VectorVelocity();
-                                XMVECTOR velocityTwoNormal = XMVector3Dot(oneToTwo, velocityTwo) * oneToTwo;
-                                XMVECTOR velocityTwoTangent = velocityTwo - velocityTwoNormal;
-
-                                // Compute the post-collision velocities.
-                                m_ammo[one]->Velocity(velocityOneTangent - velocityOneNormal * (1 - GameConstants::Physics::BounceTransfer) +
-                                    velocityTwoNormal * GameConstants::Physics::BounceTransfer
-                                    );
-                                m_ammo[two]->Velocity(velocityTwoTangent - velocityTwoNormal * (1 - GameConstants::Physics::BounceTransfer) +
-                                    velocityOneNormal * GameConstants::Physics::BounceTransfer
-                                    );
-
-                                // Fix the positions so that the two balls are exactly GameConstants::AmmoSize apart.
-                                float distanceToMove = (GameConstants::AmmoSize - sqrtf(distanceSquared)) * 0.5f;
-                                m_ammo[one]->Position(m_ammo[one]->VectorPosition() - (oneToTwo * distanceToMove));
-                                m_ammo[two]->Position(m_ammo[two]->VectorPosition() + (oneToTwo * distanceToMove));
-
-                                // Flag the two instances so that they are not laying on ground.
-                                m_ammo[one]->OnGround(false);
-                                m_ammo[two]->OnGround(false);
-
-                                // Start playing the sounds for the impact between the two balls.
-                                m_ammo[one]->PlaySound(impact, m_player->Position());
-                                m_ammo[two]->PlaySound(impact, m_player->Position());
-                            }
-                        }
-                    }
-                }
-            }
-#pragma endregion
+//#pragma region inter-ammo collision detection
+//            if (m_ammoCount > 1)
+//            {
+//                for (uint32 one = 0; one < m_ammoCount; one++)
+//                {
+//                    for (uint32 two = (one + 1); two < m_ammoCount; two++)
+//                    {
+//                        // Check collision between instances One and Two.
+//                        // OneToTwo is the vector between the centers of the two ammo that are being checked.
+//                        XMVECTOR oneToTwo;
+//                        oneToTwo = m_ammo[two]->VectorPosition() - m_ammo[one]->VectorPosition();
+//                        float distanceSquared;
+//                        distanceSquared = XMVectorGetX(
+//                            XMVector3LengthSq(oneToTwo)
+//                            );
+//                        if (distanceSquared < (GameConstants::AmmoSize * GameConstants::AmmoSize))
+//                        {
+//                            // The two ammo are intersecting.
+//                            oneToTwo = XMVector3Normalize(oneToTwo);
+//
+//                            // Check if the two instances are already moving away from each other.
+//                            // If so, skip collision.  This can happen when a lot of instances are
+//                            // bunched up next to each other.
+//                            float impact;
+//                            impact = XMVectorGetX(
+//                                XMVector3Dot(oneToTwo, m_ammo[one]->VectorVelocity()) -
+//                                XMVector3Dot(oneToTwo, m_ammo[two]->VectorVelocity())
+//                                );
+//                            if (impact > 0.0f)
+//                            {
+//                                // Compute the normal and tangential components of one's velocity.
+//                                XMVECTOR velocityOne = (1 - GameConstants::Physics::BounceLost) * m_ammo[one]->VectorVelocity();
+//                                XMVECTOR velocityOneNormal = XMVector3Dot(oneToTwo, velocityOne) * oneToTwo;
+//                                XMVECTOR velocityOneTangent = velocityOne - velocityOneNormal;
+//                                // Compute the normal and tangential components of two's velocity.
+//                                XMVECTOR velocityTwo = (1 - GameConstants::Physics::BounceLost) * m_ammo[two]->VectorVelocity();
+//                                XMVECTOR velocityTwoNormal = XMVector3Dot(oneToTwo, velocityTwo) * oneToTwo;
+//                                XMVECTOR velocityTwoTangent = velocityTwo - velocityTwoNormal;
+//
+//                                // Compute the post-collision velocities.
+//                                m_ammo[one]->Velocity(velocityOneTangent - velocityOneNormal * (1 - GameConstants::Physics::BounceTransfer) +
+//                                    velocityTwoNormal * GameConstants::Physics::BounceTransfer
+//                                    );
+//                                m_ammo[two]->Velocity(velocityTwoTangent - velocityTwoNormal * (1 - GameConstants::Physics::BounceTransfer) +
+//                                    velocityOneNormal * GameConstants::Physics::BounceTransfer
+//                                    );
+//
+//                                // Fix the positions so that the two balls are exactly GameConstants::AmmoSize apart.
+//                                float distanceToMove = (GameConstants::AmmoSize - sqrtf(distanceSquared)) * 0.5f;
+//                                m_ammo[one]->Position(m_ammo[one]->VectorPosition() - (oneToTwo * distanceToMove));
+//                                m_ammo[two]->Position(m_ammo[two]->VectorPosition() + (oneToTwo * distanceToMove));
+//
+//                                // Flag the two instances so that they are not laying on ground.
+//                                m_ammo[one]->OnGround(false);
+//                                m_ammo[two]->OnGround(false);
+//
+//                                // Start playing the sounds for the impact between the two balls.
+//                                m_ammo[one]->PlaySound(impact, m_player->Position());
+//                                m_ammo[two]->PlaySound(impact, m_player->Position());
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//#pragma endregion
 
 #pragma region Ammo-Object intersections
             // Check for intersections between the ammo and the other objects in the scene.
@@ -689,25 +705,25 @@ void Simple3DGame::UpdateDynamics()
                                     XMVECTOR oneToTwo;
                                     oneToTwo = -XMLoadFloat3(&normal);
 
-                                    float impact;
-                                    impact = XMVectorGetX(
-                                        XMVector3Dot (oneToTwo, m_ammo[one]->VectorVelocity())
-                                        );
-                                    // Make sure that the ball is actually headed towards the object. At grazing angles there
-                                    // could appear to be an impact when the ball is actually already hit and moving away.
-                                    if (impact > 0.0f)
-                                    {
-                                        // Compute the normal and tangential components of the ammo's velocity.
-                                        XMVECTOR velocityOne = (1 - GameConstants::Physics::BounceLost) * m_ammo[one]->VectorVelocity();
-                                        XMVECTOR velocityOneNormal = XMVector3Dot(oneToTwo, velocityOne) * oneToTwo;
-                                        XMVECTOR velocityOneTangent = velocityOne - velocityOneNormal;
+                                    float impact=0.0f;
+                                    //impact = XMVectorGetX(
+                                    //    XMVector3Dot (oneToTwo, m_ammo[one]->VectorVelocity())
+                                    //    );
+                                    //// Make sure that the ball is actually headed towards the object. At grazing angles there
+                                    //// could appear to be an impact when the ball is actually already hit and moving away.
+                                    //if (impact > 0.0f)
+                                    //{
+                                    //    // Compute the normal and tangential components of the ammo's velocity.
+                                    //    XMVECTOR velocityOne = (1 - GameConstants::Physics::BounceLost) * m_ammo[one]->VectorVelocity();
+                                    //    XMVECTOR velocityOneNormal = XMVector3Dot(oneToTwo, velocityOne) * oneToTwo;
+                                    //    XMVECTOR velocityOneTangent = velocityOne - velocityOneNormal;
 
-                                        // Compute post-collision velocity of the ammo.
-                                        m_ammo[one]->Velocity(velocityOneTangent - velocityOneNormal * (1 - GameConstants::Physics::BounceTransfer));
+                                    //    // Compute post-collision velocity of the ammo.
+                                    //    m_ammo[one]->Velocity(velocityOneTangent - velocityOneNormal * (1 - GameConstants::Physics::BounceTransfer));
 
-                                        // Fix the position so that the ball is exactly GameConstants::AmmoRadius from target.
-                                        float distanceToMove = GameConstants::AmmoSize;
-                                        m_ammo[one]->Position(XMLoadFloat3(&contact) - (oneToTwo * distanceToMove));
+                                    //    // Fix the position so that the ball is exactly GameConstants::AmmoRadius from target.
+                                    //    float distanceToMove = GameConstants::AmmoSize;
+                                    //    m_ammo[one]->Position(XMLoadFloat3(&contact) - (oneToTwo * distanceToMove));
 
                                         // Flag the Ammo as not laying on ground.
                                         m_ammo[one]->OnGround(false);
@@ -725,7 +741,7 @@ void Simple3DGame::UpdateDynamics()
 
                                             m_objects[i]->PlaySound(impact, m_player->Position());
                                         }
-                                    }
+                                    
                                 }
                             }
                         }
@@ -744,8 +760,8 @@ void Simple3DGame::UpdateDynamics()
                 XMFLOAT3 velocity = m_ammo[i]->Velocity();
                 XMFLOAT3 position = m_ammo[i]->Position();
 
-                velocity.x -= velocity.x * 0.1f * elapsedFrameTime;
-                velocity.z -= velocity.z * 0.1f * elapsedFrameTime;
+                //velocity.x -= velocity.x * 0.1f * elapsedFrameTime;
+                //velocity.z -= velocity.z * 0.1f * elapsedFrameTime;
                 if (!m_ammo[i]->OnGround())
                 {
                     // Apply gravity if the ammo instance is not already resting on the ground.
@@ -809,8 +825,10 @@ void Simple3DGame::UpdateDynamics()
                     // Align the ammo instance to the wall, invert the Z component of the velocity and
                     // play the impact sound.
                     position.z = limit;
-                    m_ammo[i]->PlaySound(-velocity.z, m_player->Position());
-                    velocity.z = -velocity.z * GameConstants::Physics::GroundRestitution;
+					m_ammo[i]->Active(false);
+
+                    //m_ammo[i]->PlaySound(-velocity.z, m_player->Position());
+                    //velocity.z = -velocity.z * GameConstants::Physics::GroundRestitution;
                 }
 
                 limit = m_maxBound.z - GameConstants::AmmoRadius;
@@ -820,8 +838,9 @@ void Simple3DGame::UpdateDynamics()
                     // Align the ammo instance to the wall, invert the Z component of the velocity and
                     // play the impact sound.
                     position.z = limit;
-                    m_ammo[i]->PlaySound(-velocity.z, m_player->Position());
-                    velocity.z = -velocity.z * GameConstants::Physics::GroundRestitution;
+					m_ammo[i]->Active(false);
+                    //m_ammo[i]->PlaySound(-velocity.z, m_player->Position());
+                    //velocity.z = -velocity.z * GameConstants::Physics::GroundRestitution;
                 }
 
                 limit = m_minBound.x + GameConstants::AmmoRadius;
@@ -831,8 +850,9 @@ void Simple3DGame::UpdateDynamics()
                     // Align the ammo instance to the wall, invert the X component of the velocity and
                     // play the impact sound.
                     position.x = limit;
-                    m_ammo[i]->PlaySound(-velocity.x, m_player->Position());
-                    velocity.x = -velocity.x * GameConstants::Physics::GroundRestitution;
+					m_ammo[i]->Active(false);
+                    //m_ammo[i]->PlaySound(-velocity.x, m_player->Position());
+                    //velocity.x = -velocity.x * GameConstants::Physics::GroundRestitution;
                 }
 
                 limit = m_maxBound.x - GameConstants::AmmoRadius;
@@ -842,8 +862,10 @@ void Simple3DGame::UpdateDynamics()
                     // Align the ammo instance to the wall, invert the X component of the velocity and
                     // play the impact sound.
                     position.x = limit;
-                    m_ammo[i]->PlaySound(-velocity.x, m_player->Position());
-                    velocity.x = -velocity.x * GameConstants::Physics::GroundRestitution;
+					m_ammo[i]->Active(false);
+
+                    //m_ammo[i]->PlaySound(-velocity.x, m_player->Position());
+                    //velocity.x = -velocity.x * GameConstants::Physics::GroundRestitution;
                 }
 
                 // Save the updated velocity and position for the ammo instance.
@@ -929,7 +951,8 @@ void Simple3DGame::LoadState()
 
         // Reload the current player position and set both the camera and the controller
         // with the current Look Direction.
-        m_player->Position(
+        
+(
             m_savedState->LoadXMFLOAT3(":PlayerPosition", XMFLOAT3(0.0f, 0.0f, 0.0f))
             );
         m_camera->Eye(XMFLOAT3(0.0f, 0.0f, -5.0f)

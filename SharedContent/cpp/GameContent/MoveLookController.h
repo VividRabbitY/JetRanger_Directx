@@ -260,8 +260,8 @@ private:
     bool                        m_back;
     bool                        m_left;
     bool                        m_right;
-    bool                        m_up;
-    bool                        m_down;
+    bool                        m_fire;
+    bool                        m_jump;
     bool                        m_pause;
 
     // Game controller related members.

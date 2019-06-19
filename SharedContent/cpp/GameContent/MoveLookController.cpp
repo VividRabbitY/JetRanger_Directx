@@ -134,7 +134,7 @@ bool MoveLookController::IsFiring()
     {
         if (m_autoFire)
         {
-            return (m_fireInUse || (m_mouseInUse && m_mouseLeftInUse) || PollingFireInUse());
+            return (m_fireInUse || (m_mouseInUse && m_mouseLeftInUse) || PollingFireInUse()||m_fire);
         }
         else
         {
@@ -570,18 +570,18 @@ void MoveLookController::OnKeyDown(
     Key = args->VirtualKey;
 
     // Figure out the command from the keyboard.
-    if (Key == VirtualKey::W)
+    if (Key == VirtualKey::Up)
         m_forward = true;
-    if (Key == VirtualKey::S)
+    if (Key == VirtualKey::Down)
         m_back = true;
-    if (Key == VirtualKey::A)
+    if (Key == VirtualKey::Left)
         m_left = true;
-    if (Key == VirtualKey::D)
+    if (Key == VirtualKey::Right)
         m_right = true;
-    if (Key == VirtualKey::Space)
-        m_up = true;
+    if (Key == VirtualKey::Z)
+        m_fireInUse = true;
     if (Key == VirtualKey::X)
-        m_down = true;
+        m_jump = true;
     if (Key == VirtualKey::P)
         m_pause = true;
 }
@@ -597,18 +597,18 @@ void MoveLookController::OnKeyUp(
     Key = args->VirtualKey;
 
     // Figure out the command from the keyboard.
-    if (Key == VirtualKey::W)
+    if (Key == VirtualKey::Up)
         m_forward = false;
-    if (Key == VirtualKey::S)
+    if (Key == VirtualKey::Down)
         m_back = false;
-    if (Key == VirtualKey::A)
+    if (Key == VirtualKey::Left)
         m_left = false;
-    if (Key == VirtualKey::D)
+    if (Key == VirtualKey::Right)
         m_right = false;
-    if (Key == VirtualKey::Space)
-        m_up = false;
+    if (Key == VirtualKey::Z)
+        m_fireInUse = false;
     if (Key == VirtualKey::X)
-        m_down = false;
+        m_jump = false;
     if (Key == VirtualKey::P)
     {
         if (m_pause)
@@ -645,8 +645,8 @@ void MoveLookController::ResetState()
     m_back = false;
     m_left = false;
     m_right = false;
-    m_up = false;
-    m_down = false;
+    m_fire = false;
+    m_jump = false;
     m_pause = false;
 }
 
@@ -1041,14 +1041,14 @@ void MoveLookController::Update()
     {
         m_moveCommand.x -= 1.0f;
     }
-    if (m_up)
-    {
-        m_moveCommand.z += 1.0f;
-    }
-    if (m_down)
-    {
-        m_moveCommand.z -= 1.0f;
-    }
+    //if (m_up)
+    //{
+    //    m_moveCommand.z += 1.0f;
+    //}
+    //if (m_down)
+    //{
+    //    m_moveCommand.z -= 1.0f;
+    //}
 
     // Make sure that 45deg cases are not faster.
     if (fabsf(m_moveCommand.x) > 0.1f ||
@@ -1060,15 +1060,15 @@ void MoveLookController::Update()
 
     // Rotate command to align with our direction (world coordinates).
     XMFLOAT3 wCommand;
-    wCommand.x =  m_moveCommand.x * cosf(m_yaw) - m_moveCommand.y * sinf(m_yaw);
-    wCommand.y =  m_moveCommand.x * sinf(m_yaw) + m_moveCommand.y * cosf(m_yaw);
+    wCommand.x =  m_moveCommand.x /** cosf(m_yaw) - m_moveCommand.y * sinf(m_yaw)*/;
+    wCommand.y =  m_moveCommand.y /** sinf(m_yaw) + m_moveCommand.y * cosf(m_yaw)*/;
     wCommand.z =  m_moveCommand.z;
 
     // Scale for sensitivity adjustment.
     // Our velocity is based on the command. Y is up.
-    m_velocity.x = -wCommand.x * MoveLookConstants::MovementGain;
-    m_velocity.z =  wCommand.y * MoveLookConstants::MovementGain;
+    m_velocity.x =  wCommand.x * MoveLookConstants::MovementGain;
     m_velocity.y =  wCommand.z * MoveLookConstants::MovementGain;
+    m_velocity.z =  -wCommand.y * MoveLookConstants::MovementGain;
 
     // Clear movement input accumulator for use during next frame.
     m_moveCommand = XMFLOAT3(0.0f, 0.0f, 0.0f);
